@@ -11,16 +11,6 @@ DNSServer iotConfigDnsServer;
 WiFiServer iotConfigServer(80);
 WiFiClient iotConfigClient;
 
-const char HTML[] PROGMEM = "<form> \
-  <div>\
-    <label for=\"example\">Let's submit some text</label>\
-    <input id=\"example\" type=\"text\" name=\"text\">\
-  </div>\
-  <div>\
-    <input type=\"submit\" value=\"Send\">\
-  </div>\
-</form>";
-
 RTC_DATA_ATTR uint8_t firstBoot = 1;
 RTC_DATA_ATTR uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
 
@@ -132,36 +122,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
 
    if ((strlen(otaPassword)>0) && ((!firstBoot)||(coldBootAPtime==0)))
    {
-      ArduinoOTA.setHostname(friendlyName);
-      ArduinoOTA.setPassword(otaPassword);
-      ArduinoOTA
-        .onStart([]() {
-          String type;
-          if (ArduinoOTA.getCommand() == U_FLASH)
-            type = "sketch";
-          else // U_SPIFFS
-            type = "filesystem";
-            // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-          Serial.println("Start updating " + type);
-          iotConfigOtaPrio = true;
-        })
-        .onEnd([]() {
-          Serial.println("\nEnd");
-          iotConfigOtaPrio = false;
-        })
-        .onProgress([](unsigned int progress, unsigned int total) {
-          Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-        })
-        .onError([](ota_error_t error) {
-          Serial.printf("Error[%u]: ", error);
-          if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-          else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-          else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-          else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-          else if (error == OTA_END_ERROR) Serial.println("End Failed");
-          iotConfigOtaPrio = false;
-        });
-
+      arduinoOTAsetup(friendlyName, otaPassword);
       WiFi.onEvent(otaConfigWiFiEvent);
       Serial.println();
       Serial.println();
@@ -193,6 +154,47 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    }
    
    return true;
+}
+
+void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPassword)
+{
+   ArduinoOTA.setHostname(friendlyName);
+   ArduinoOTA.setPassword(otaPassword);
+   ArduinoOTA
+     .onStart([]() {
+       String type;
+       if (ArduinoOTA.getCommand() == U_FLASH)
+         type = "sketch";
+       else // U_SPIFFS
+        type = "filesystem";
+         // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+       Serial.println("Start updating " + type);
+       iotConfigOtaPrio = true;
+     })
+     .onEnd([]() {
+       Serial.println("\nEnd");
+       iotConfigOtaPrio = false;
+     })
+     .onProgress([](unsigned int progress, unsigned int total) {
+       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+     })
+     .onError([](ota_error_t error) {
+       Serial.printf("Error[%u]: ", error);
+       if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+       else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+       else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+       else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+       else if (error == OTA_END_ERROR) Serial.println("End Failed");
+       iotConfigOtaPrio = false;
+     });
+}
+
+void iotConfig::recoveryChanceWait()
+{
+   while (millis() < apExpireTime)
+   {
+      handle();
+   }
 }
 
 void iotConfig::setWiFiClientWatchDogTimeout(const uint32_t timeoutMS)
@@ -424,6 +426,7 @@ bool iotConfig::handle()
                     {
                        if (currentLine.length() == 0)
                        {
+                          apExpireTime=iotConfigCurrentMillis + 60000;
                           iotConfigClient.println("HTTP/1.1 200 OK");
                           iotConfigClient.println("Content-type:text/html");
                           iotConfigClient.println();
@@ -469,6 +472,7 @@ bool iotConfig::handle()
                                       }
                                   }
                                   iotConfigClient.print("<br><br><a href=\"/reset\">Factory reset</a><br>");
+                                  iotConfigClient.print("<br><a href=\"/recovery\">Firmware recovery / unbrick</a><br>");
                                   break;
                                   
                              case iotConfigJoinForm:
@@ -493,6 +497,20 @@ bool iotConfig::handle()
                              case iotConfigResetForm:
                                   iotConfigClient.print("<br><b>Factory-Reset");
                                   iotConfigClient.print("</b><br><br>WARNING: All stored data will be lost!");
+                                  iotConfigClient.println("<br>");
+                                  iotConfigClient.print("<form method=\"get\" onsubmit=\"javascript:document.location='/reset.cgi' + $('pass') + '';\">");
+                                  iotConfigClient.print("<br>Enter OTA Password: ");
+                                  iotConfigClient.print("<input type=\"password\" name=\"fdpass\" id=\"fdpass\" /><br>");
+                                  iotConfigClient.print("<input type=\"submit\" value=\"ok\"/></form>");
+                                  break;
+
+                             case iotConfigRecoveryForm:
+                                  iotConfigClient.print("<br><b>Firmware Recovery / Unbrick</b><br>");
+                                  iotConfigClient.print("<br>1) Enter the OTA password and klick 'ok'");
+                                  iotConfigClient.print("<br>2) Connect the development PC to the ESP's AP!");
+                                  iotConfigClient.print("<br>3) Start Arduino IDE, choose port 'recovery ");
+                                  iotConfigClient.print(friendlyName);
+                                  iotConfigClient.print("' and upload new sketch.");
                                   iotConfigClient.println("<br>");
                                   iotConfigClient.print("<form method=\"get\" onsubmit=\"javascript:document.location='/reset.cgi' + $('pass') + '';\">");
                                   iotConfigClient.print("<br>Enter OTA Password: ");
@@ -598,6 +616,32 @@ bool iotConfig::handle()
                           {
                              factoryReset();
                              reboot();
+                          }
+                          else
+                          {
+                             iotConfigServerState = iotConfigError;
+                             iotConfigErrorType = iotConfigErrorWrongPassword;
+                          }
+                       }
+                    }
+                    if ( currentLine.startsWith("GET /recovery") &&
+                         currentLine.endsWith(" HTTP")
+                       )
+                    {
+                       iotConfigServerState = iotConfigRecoveryForm;
+                       currentLine.remove(currentLine.length()-5,5);
+
+                       String decodedPassString=queryToAscii(getQueryParam(currentLine,"fdpass"));
+                       if (currentLine.indexOf("fdpass") >= 0)
+                       {
+                          if (strncmp(otaPassword, decodedPassString.c_str(), sizeof(otaPassword)) == 0)
+                          {
+                             arduinoOTAsetup(String("recovery " + String(friendlyName)).c_str(), otaPassword);
+                             ArduinoOTA.begin();
+                             while (1)
+                             {
+                                ArduinoOTA.handle();
+                             }
                           }
                           else
                           {

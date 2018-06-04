@@ -20,6 +20,8 @@ void setup()
   
     ic.begin("iotesp32", "admin", 100, 10, 10000);
     ic.setWiFiClientWatchDogTimeout(10000);
+    ic.recoveryChanceWait();
+
     merker1=100;
     ic.assignVariableEEPROM((uint8_t*)&merker1, sizeof(int));
     ic.assignVariableEEPROM((uint8_t*)&merker2, sizeof(int));
@@ -60,7 +62,6 @@ void loop(){
      }
      nextEvent += 5000;
   }
-
 
 
   static WiFiClient client;

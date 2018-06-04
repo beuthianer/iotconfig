@@ -30,6 +30,7 @@ class iotConfig
       bool begin(const char *deviceName, const char *initialPasswordN,
                  const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime);
       void setWiFiClientWatchDogTimeout(const uint32_t timeoutMS);
+      void recoveryChanceWait();
       bool assignVariableEEPROM(uint8_t *pointer, const size_t varSize);
       bool assignVariableRTCDATA(uint8_t *pointer, const size_t varSize);
       void factoryReset();
@@ -50,9 +51,10 @@ class iotConfig
       uint32_t calcCRC();
       String queryToAscii(String queryString);
       String getQueryParam(String queryString, String paramName);
+      void arduinoOTAsetup(const char *friendlyName, const char *otaPassword);
 
       enum {iotConfigNoneMode, iotConfigServerMode, iotConfigClientMode, iotConfigTestWiFi, iotConfigWiFiTestWaitConnect} iotConfigMode;
-      enum {iotConfigScanSSIDs, iotConfigShowSSIDs, iotConfigJoinForm, iotConfigResetForm, iotConfigError} iotConfigServerState;
+      enum {iotConfigScanSSIDs, iotConfigShowSSIDs, iotConfigJoinForm, iotConfigResetForm, iotConfigRecoveryForm, iotConfigError} iotConfigServerState;
       enum {iotConfigErrorTypo, iotConfigErrorNoName, iotConfigErrorWrongPassword} iotConfigErrorType;
       int numScannedNetworks;
       int joinedNetworkIndex;
