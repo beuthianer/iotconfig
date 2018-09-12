@@ -69,7 +69,6 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
    esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
    esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
-   esp_deep_sleep_enable_ulp_wakeup();
 
    if (rtcDataSizeN > IOT_RTC_DATA_SIZE)
    {
