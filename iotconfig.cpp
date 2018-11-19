@@ -42,7 +42,7 @@ iotConfig::~iotConfig()
 {
 }
 
-static void otaConfigWiFiEvent(WiFiEvent_t event)
+static void iotConfigWiFiEvent(WiFiEvent_t event)
 {
    Serial.printf("[WiFi-event] event: %d\n", event);
 
@@ -52,7 +52,7 @@ static void otaConfigWiFiEvent(WiFiEvent_t event)
           Serial.println("WiFi connected");
           Serial.println("IP address: ");
           Serial.println(WiFi.localIP());
-           iotConfigOnline=true;
+          iotConfigOnline=true;
           break;
       case SYSTEM_EVENT_STA_DISCONNECTED:
           Serial.println("WiFi lost connection");
@@ -121,18 +121,15 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
 
    if ((strlen(otaPassword)>0) && ((!firstBoot)||(coldBootAPtime==0)))
    {
-      arduinoOTAsetup(friendlyName, otaPassword);
-      WiFi.onEvent(otaConfigWiFiEvent);
+      WiFi.onEvent(iotConfigWiFiEvent);
       Serial.println();
       Serial.println();
       Serial.print("Connecting to ");
       Serial.println(wifiClientSSID);
 
       WiFi.mode(WIFI_STA);
-      WiFi.enableAP(false);
-      WiFi.enableSTA(true);
+      WiFi.setHostname(friendlyName);
       WiFi.begin(wifiClientSSID, wifiClientPassword);
-      WiFi.enableAP(false);
       iotConfigMode=iotConfigClientMode;
    }
    else
@@ -140,8 +137,6 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
       Serial.print("INFO: Setting up Access Point with SSID: ");
       Serial.println(friendlyName);
       WiFi.mode(WIFI_AP);
-      WiFi.enableSTA(false);
-      WiFi.enableAP(true);
       WiFi.softAPConfig(iotConfigApIP, iotConfigApIP, IPAddress(255, 255, 255, 0));
       WiFi.softAP(friendlyName, wifiApPassword);
       // if DNSServer is started with "*" for domain name, it will reply with
@@ -186,6 +181,7 @@ void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPasswor
        else if (error == OTA_END_ERROR) Serial.println("End Failed");
        iotConfigOtaPrio = false;
      });
+   ArduinoOTA.begin();
 }
 
 void iotConfig::recoveryChanceWait()
@@ -388,7 +384,7 @@ bool iotConfig::handle()
            {
               if (iotConfigOnline)
               {
-                 ArduinoOTA.begin();
+                 arduinoOTAsetup(friendlyName, otaPassword);
                  otaInitialized = true;
               }
            }
@@ -409,6 +405,8 @@ bool iotConfig::handle()
            {
               Serial.println("INFO: Change from AP mode to Client mode");
               firstBoot = 0;
+              WiFi.disconnect(true);
+              WiFi.mode(WIFI_STA);
               reboot();
            }
                     
@@ -636,7 +634,6 @@ bool iotConfig::handle()
                           if (strncmp(otaPassword, decodedPassString.c_str(), sizeof(otaPassword)) == 0)
                           {
                              arduinoOTAsetup(String("recovery " + String(friendlyName)).c_str(), otaPassword);
-                             ArduinoOTA.begin();
                              while (1)
                              {
                                 ArduinoOTA.handle();
@@ -674,7 +671,7 @@ bool iotConfig::handle()
            WiFi.mode(WIFI_STA);
            WiFi.enableAP(false);
            WiFi.enableSTA(true);
-           WiFi.onEvent(otaConfigWiFiEvent);
+           WiFi.onEvent(iotConfigWiFiEvent);
            Serial.println();
            Serial.println();
            Serial.print("Connecting to ");
