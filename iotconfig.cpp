@@ -1,5 +1,5 @@
 #include "driver/rtc_io.h"
-#include "esp_deep_sleep.h"
+#include "esp_sleep.h"
 #include "iotconfig.hpp"
 
 #ifndef min
@@ -59,6 +59,8 @@ static void iotConfigWiFiEvent(WiFiEvent_t event)
           iotConfigOnline=false;
           iotConfigWifiLossTS=iotConfigCurrentMillis;
           break;
+      default:
+          break;
    }
 }
 
@@ -66,9 +68,9 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
                       const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime)
  
 {
-   esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-   esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
-   esp_deep_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
+   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
+   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
 
    if (rtcDataSizeN > IOT_RTC_DATA_SIZE)
    {
@@ -690,6 +692,8 @@ bool iotConfig::handle()
            {
               reboot();
            }
+           break;
+      default:
            break;
    }
    return (iotConfigMode == iotConfigClientMode);
