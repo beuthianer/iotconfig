@@ -759,7 +759,7 @@ bool iotConfig::handle()
       default:
            break;
    }
-   return (iotConfigMode == iotConfigClientMode);
+   return isOnline();
 }
 
 String iotConfig::queryToAscii(String queryString)
