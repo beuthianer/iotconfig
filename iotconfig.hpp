@@ -62,6 +62,7 @@ class iotConfig
       char friendlyName[32];
       char wifiApPassword[32];
       char wifiClientSSID[32];
+      char wifiClientUsername[32];
       char wifiClientPassword[32];
       char otaPassword[32];
       unsigned long clientConnectTime;

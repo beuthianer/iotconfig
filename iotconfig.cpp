@@ -1,5 +1,6 @@
 #include "driver/rtc_io.h"
 #include "esp_sleep.h"
+#include "esp_wpa2.h"
 #include "iotconfig.hpp"
 
 #ifndef min
@@ -81,6 +82,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
               sizeof(friendlyName)+
               sizeof(wifiApPassword)+
               sizeof(wifiClientSSID)+
+              sizeof(wifiClientUsername)+
               sizeof(wifiClientPassword)+
               sizeof(otaPassword);
    rtcDataSize=rtcDataSizeN;
@@ -118,6 +120,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    }
 
    assignVariableEEPROM((uint8_t*)&wifiClientSSID, sizeof(wifiClientSSID));
+   assignVariableEEPROM((uint8_t*)&wifiClientUsername, sizeof(wifiClientUsername));
    assignVariableEEPROM((uint8_t*)&wifiClientPassword, sizeof(wifiClientPassword));
    assignVariableEEPROM((uint8_t*)&otaPassword, sizeof(otaPassword));
 
@@ -129,9 +132,22 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
       Serial.print("Connecting to ");
       Serial.println(wifiClientSSID);
 
-      WiFi.mode(WIFI_STA);
-      WiFi.setHostname(friendlyName);
-      WiFi.begin(wifiClientSSID, wifiClientPassword);
+      if (strlen(wifiClientUsername) == 0) {
+         // WPA(2)-PSK / WEP
+         WiFi.mode(WIFI_STA);
+         WiFi.setHostname(friendlyName);
+         WiFi.begin(wifiClientSSID, wifiClientPassword);
+      } else {
+         WiFi.disconnect();
+         WiFi.mode(WIFI_STA); // init wifi mode
+         esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+         esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+         esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
+         esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
+         esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
+         WiFi.setHostname(friendlyName);
+         WiFi.begin(wifiClientSSID); // connect to wifi
+      }
       iotConfigMode=iotConfigClientMode;
    }
    else
@@ -425,6 +441,7 @@ bool iotConfig::handle()
                     {
                        if (currentLine.length() == 0)
                        {
+                          String wpaTypes[] = { "OPEN", "WEP", "WPA-PSK", "WPA2-PSK", "WPA/WPA2-PSK","WPA2-Enterprise" };
                           apExpireTime=iotConfigCurrentMillis + 60000;
                           iotConfigClient.println("HTTP/1.1 200 OK");
                           iotConfigClient.println("Content-type:text/html");
@@ -458,17 +475,26 @@ bool iotConfig::handle()
                                   } else {
                                       iotConfigClient.print(numScannedNetworks);
                                       iotConfigClient.println(" networks found:<br><br>");
+                                      iotConfigClient.println("<table><tr>");
+                                      iotConfigClient.println("<th>SSID</th>");
+                                      iotConfigClient.println("<th>Power</th>");
+                                      iotConfigClient.println("<th>Encryption</th>");
+                                      iotConfigClient.println("</tr>");
                                       for (int i = 0; i < numScannedNetworks; ++i) {
+                                          iotConfigClient.println("<tr>");
                                           // Print SSID and RSSI for each network found
-                                          iotConfigClient.print("<a href=\"/join/");
+                                          iotConfigClient.print("<td><a href=\"/join/");
                                           iotConfigClient.print(i + 1);
-                                          iotConfigClient.print("\">Join ");
+                                          iotConfigClient.print("\">");
                                           iotConfigClient.print(WiFi.SSID(i));
-                                          iotConfigClient.print(" (");
+                                          iotConfigClient.print(" </a></td><td>");
                                           iotConfigClient.print(WiFi.RSSI(i));
-                                          iotConfigClient.print(")");
-                                          iotConfigClient.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" <br>":"*</a><br>");
+                                          iotConfigClient.print(" dB</td><td>");
+                                          iotConfigClient.println(wpaTypes[WiFi.encryptionType(i)]);
+                                          iotConfigClient.println("</td>");
+                                          iotConfigClient.println("</tr>");
                                       }
+                                      iotConfigClient.println("</table>");
                                   }
                                   iotConfigClient.print("<br><br><a href=\"/reset\">Factory reset</a><br>");
                                   iotConfigClient.print("<br><a href=\"/recovery\">Firmware recovery / unbrick</a><br>");
@@ -479,8 +505,24 @@ bool iotConfig::handle()
                                   iotConfigClient.print(WiFi.SSID(joinedNetworkIndex-1));
                                   iotConfigClient.println("</b><br><br>");
                                   iotConfigClient.print("<form method=\"get\" onsubmit=\"javascript:document.location='/login.cgi' + $('pass') + '';\">");
-                                  iotConfigClient.print("WiFi PSK-Key: ");
-                                  iotConfigClient.print("<input type=\"password\" name=\"pass\" id=\"pass\" /><br>");
+                                  switch (WiFi.encryptionType(joinedNetworkIndex-1))
+                                  {
+                                     case WIFI_AUTH_WEP:
+                                     case WIFI_AUTH_WPA_PSK:
+                                     case WIFI_AUTH_WPA2_PSK:
+                                     case WIFI_AUTH_WPA_WPA2_PSK:
+                                          iotConfigClient.print("WiFi PSK-Key: ");
+                                          iotConfigClient.print("<input type=\"password\" name=\"pass\" id=\"pass\" /><br>");
+                                          break;
+                                     case WIFI_AUTH_WPA2_ENTERPRISE:
+                                          iotConfigClient.print("WiFi EAP Identity: ");
+                                          iotConfigClient.print("<input type=\"text\" name=\"ident\" id=\"ident\" /><br>");
+                                          iotConfigClient.print("WiFi EAP Password: ");
+                                          iotConfigClient.print("<input type=\"password\" name=\"pass\" id=\"pass\" /><br>");
+                                          break;
+                                     default:
+                                          break;
+                                  }
                                   iotConfigClient.print("Friendly Name: ");
                                   iotConfigClient.print("<input type=\"text\" name=\"fname\" id=\"fname\" /><br>");
                                   if (strlen(otaPassword) == 0)
@@ -557,6 +599,7 @@ bool iotConfig::handle()
                        currentLine.remove(currentLine.length()-5,5);
                        if (currentLine.length() > 6)
                        {
+                          String decodedUsernameString=queryToAscii(getQueryParam(currentLine,"ident"));
                           String decodedPSKString=queryToAscii(getQueryParam(currentLine,"pass"));
                           String decodedOTAString=queryToAscii(getQueryParam(currentLine,"ota"));
                           String decodedOTARString=queryToAscii(getQueryParam(currentLine,"otar"));
@@ -591,7 +634,11 @@ bool iotConfig::handle()
 
                           if (iotConfigMode == iotConfigTestWiFi)
                           {
+                             memset((char*)wifiClientSSID, 0, sizeof(wifiClientSSID));
+                             memset((char*)wifiClientUsername, 0, sizeof(wifiClientUsername));
+                             memset((char*)wifiClientPassword, 0, sizeof(wifiClientPassword));
                              strncpy(wifiClientSSID, WiFi.SSID(joinedNetworkIndex-1).c_str(), sizeof(wifiClientSSID));
+                             strncpy(wifiClientUsername, decodedUsernameString.c_str(), sizeof(wifiClientUsername));
                              strncpy(wifiClientPassword, decodedPSKString.c_str(), sizeof(wifiClientPassword));
                           }
                        }
@@ -679,7 +726,23 @@ bool iotConfig::handle()
            Serial.print("Connecting to ");
            Serial.println(wifiClientSSID);
     
-           WiFi.begin(wifiClientSSID, wifiClientPassword);
+           if (strlen(wifiClientUsername) == 0) {
+              // WPA(2)-PSK / WEP
+              WiFi.mode(WIFI_STA);
+              WiFi.setHostname(friendlyName);
+              WiFi.begin(wifiClientSSID, wifiClientPassword);
+           } else {
+              WiFi.disconnect();
+              WiFi.mode(WIFI_STA); // init wifi mode
+              esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+              esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+              esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
+              esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
+              esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
+              WiFi.setHostname(friendlyName);
+              WiFi.begin(wifiClientSSID); // connect to wifi
+           }
+
            iotConfigMode=iotConfigWiFiTestWaitConnect;
            clientConnectTime = iotConfigCurrentMillis;
            break;
