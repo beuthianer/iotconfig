@@ -775,6 +775,10 @@ String iotConfig::queryToAscii(String queryString)
          decodedString=decodedString+hexVal;
          i+=2;
       }
+      else if (queryString[i]=='+')
+      {
+         decodedString=decodedString+" ";
+      }
       else
       {
          decodedString=decodedString+queryString[i];
@@ -853,6 +857,10 @@ String queryToAscii(String queryString)
          //Serial.println(hexVal);
          decodedString=decodedString+hexVal;
          i+=2;
+      }
+      else if (queryString[i]=='+')
+      {
+         decodedString=decodedString+" ";
       }
       else
       {
