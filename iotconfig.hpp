@@ -9,6 +9,7 @@
 #include <EEPROM.h>
 
 #define IOT_RTC_DATA_SIZE 64
+#define WIFI_CONNECT_TIME 10000
 
 extern unsigned long iotConfigCurrentMillis;
 
@@ -38,6 +39,7 @@ class iotConfig
       void updateRTCDATA();
       void reboot();
       void saveAndReboot();
+      void reconnect();
       bool handle();
       bool isOnline();
       char *getFriendlyName();

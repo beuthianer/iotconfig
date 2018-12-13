@@ -132,22 +132,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
       Serial.print("Connecting to ");
       Serial.println(wifiClientSSID);
 
-      if (strlen(wifiClientUsername) == 0) {
-         // WPA(2)-PSK / WEP
-         WiFi.mode(WIFI_STA);
-         WiFi.setHostname(friendlyName);
-         WiFi.begin(wifiClientSSID, wifiClientPassword);
-      } else {
-         WiFi.disconnect();
-         WiFi.mode(WIFI_STA); // init wifi mode
-         esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
-         esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
-         esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
-         esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
-         esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
-         WiFi.setHostname(friendlyName);
-         WiFi.begin(wifiClientSSID); // connect to wifi
-      }
+      reconnect();
       iotConfigMode=iotConfigClientMode;
    }
    else
@@ -166,6 +151,27 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    }
    
    return true;
+}
+
+void iotConfig::reconnect() {
+   WiFi.disconnect();
+   if (strlen(wifiClientUsername) == 0) {
+      // WPA(2)-PSK / WEP
+      WiFi.mode(WIFI_STA);
+      WiFi.setHostname(friendlyName);
+      WiFi.begin(wifiClientSSID, wifiClientPassword);
+   } else {
+      // WPA(2)-Enterprise
+      WiFi.mode(WIFI_STA);
+      WiFi.mode(WIFI_STA); // init wifi mode
+      esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+      esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
+      esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
+      esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
+      esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
+      WiFi.setHostname(friendlyName);
+      WiFi.begin(wifiClientSSID); // connect to wifi
+   }
 }
 
 void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPassword)
@@ -388,6 +394,7 @@ void iotConfig::saveAndReboot()
 bool iotConfig::handle()
 {
    iotConfigCurrentMillis = millis();
+   static unsigned long iotConfigReconnectTS = 0;
    
    switch(iotConfigMode)
    {
@@ -400,13 +407,18 @@ bool iotConfig::handle()
            }
            else
            {
-              if (iotConfigOnline)
+              if ((iotConfigOnline) && (!otaInitialized))
               {
                  arduinoOTAsetup(friendlyName, otaPassword);
                  otaInitialized = true;
               }
            }
            
+           if ((!iotConfigOnline) && (iotConfigCurrentMillis > iotConfigReconnectTS + watchDogTimeout/2 + WIFI_CONNECT_TIME))
+           {
+              iotConfigReconnectTS = iotConfigCurrentMillis;
+              reconnect();
+           }
            if ((!iotConfigOnline) && (watchDogTimeout > 0))
            {
               if (iotConfigCurrentMillis > iotConfigWifiLossTS + watchDogTimeout)
@@ -726,22 +738,7 @@ bool iotConfig::handle()
            Serial.print("Connecting to ");
            Serial.println(wifiClientSSID);
     
-           if (strlen(wifiClientUsername) == 0) {
-              // WPA(2)-PSK / WEP
-              WiFi.mode(WIFI_STA);
-              WiFi.setHostname(friendlyName);
-              WiFi.begin(wifiClientSSID, wifiClientPassword);
-           } else {
-              WiFi.disconnect();
-              WiFi.mode(WIFI_STA); // init wifi mode
-              esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
-              esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
-              esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
-              esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
-              esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
-              WiFi.setHostname(friendlyName);
-              WiFi.begin(wifiClientSSID); // connect to wifi
-           }
+           reconnect();
 
            iotConfigMode=iotConfigWiFiTestWaitConnect;
            clientConnectTime = iotConfigCurrentMillis;
