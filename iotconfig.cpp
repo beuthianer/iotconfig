@@ -56,6 +56,9 @@ static void iotConfigWiFiEvent(WiFiEvent_t event)
           iotConfigOnline=true;
           break;
       case SYSTEM_EVENT_STA_DISCONNECTED:
+      case SYSTEM_EVENT_STA_STOP:
+      case SYSTEM_EVENT_STA_LOST_IP:
+      case SYSTEM_EVENT_STA_AUTHMODE_CHANGE:
           Serial.println("WiFi lost connection");
           iotConfigOnline=false;
           iotConfigWifiLossTS=iotConfigCurrentMillis;
