@@ -19,6 +19,7 @@ unsigned long iotConfigCurrentMillis=0;
 static bool iotConfigOtaPrio = false;
 static bool iotConfigOnline = false;
 static unsigned long iotConfigWifiLossTS=0;
+static bool iotConfigResetState = false;
 
 iotConfig::iotConfig()
 {
@@ -62,6 +63,10 @@ static void iotConfigWiFiEvent(WiFiEvent_t event)
           Serial.println("WiFi lost connection");
           iotConfigOnline=false;
           iotConfigWifiLossTS=iotConfigCurrentMillis;
+          break;
+      case SYSTEM_EVENT_AP_STACONNECTED:
+      case SYSTEM_EVENT_AP_STAIPASSIGNED:
+          iotConfigResetState=true;
           break;
       default:
           break;
@@ -127,9 +132,9 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    assignVariableEEPROM((uint8_t*)&wifiClientPassword, sizeof(wifiClientPassword));
    assignVariableEEPROM((uint8_t*)&otaPassword, sizeof(otaPassword));
 
+   WiFi.onEvent(iotConfigWiFiEvent);
    if ((strlen(otaPassword)>0) && ((!firstBoot)||(coldBootAPtime==0)))
    {
-      WiFi.onEvent(iotConfigWiFiEvent);
       Serial.println();
       Serial.println();
       Serial.print("Connecting to ");
@@ -462,13 +467,20 @@ bool iotConfig::handle()
                           iotConfigClient.println("Content-type:text/html");
                           iotConfigClient.println();
                           iotConfigClient.print("<!DOCTYPE html><html><head><title>CaptivePortal</title>");
+                          if (iotConfigResetState) {
+                            iotConfigResetState = false;
+                            iotConfigServerState = iotConfigScanSSIDs;
+                          }
                           if (iotConfigServerState==iotConfigScanSSIDs)
                           {
                              iotConfigClient.print("<META HTTP-EQUIV=\"refresh\" CONTENT=\"6\">");
                           }
-                          iotConfigClient.print("</head><body>");
+                          iotConfigClient.print("</head><body><b>");
                           iotConfigClient.print(friendlyName);
-                          iotConfigClient.print(" device configuration<br>");
+                          iotConfigClient.print(" device configuration</b><br>");
+                          iotConfigClient.print("MAC-Address: ");
+                          iotConfigClient.print(WiFi.macAddress());
+                          iotConfigClient.print("<br><br>");
                           switch(iotConfigServerState)
                           {
                              case iotConfigScanSSIDs:
@@ -562,7 +574,7 @@ bool iotConfig::handle()
 
                              case iotConfigRecoveryForm:
                                   iotConfigClient.print("<br><b>Firmware Recovery / Unbrick</b><br>");
-                                  iotConfigClient.print("<br>1) Enter the OTA password and klick 'ok'");
+                                  iotConfigClient.print("<br>1) Enter the OTA password and click 'ok'");
                                   iotConfigClient.print("<br>2) Connect the development PC to the ESP's AP!");
                                   iotConfigClient.print("<br>3) Start Arduino IDE, choose port 'recovery ");
                                   iotConfigClient.print(friendlyName);

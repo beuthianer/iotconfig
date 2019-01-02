@@ -37,7 +37,8 @@ void setup()
     Serial.println(merker3);
     server.begin();
 
-    //ic.factoryReset();
+    pinMode(0, INPUT_PULLUP);
+    if (digitalRead(0) == 0) { Serial.println("BUTTON PRESSED -> FACTORY RESET"); ic.factoryReset(); }
 }
 
 void loop(){
@@ -137,4 +138,3 @@ void loop(){
      clientConnectTime = currentMillis;
   }
 }
-
