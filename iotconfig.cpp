@@ -253,14 +253,17 @@ void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPasswor
          // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
        Serial.println("Start updating " + type);
        iotConfigOtaPrio = true;
-     })
+     });
+   ArduinoOTA
      .onEnd([]() {
        Serial.println("\nEnd");
        iotConfigOtaPrio = false;
-     })
+     });
+   ArduinoOTA
      .onProgress([](unsigned int progress, unsigned int total) {
        Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-     })
+     });
+   ArduinoOTA
      .onError([](ota_error_t error) {
        Serial.printf("Error[%u]: ", error);
        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
@@ -446,20 +449,25 @@ uint32_t iotConfig::calcCRC()
 void iotConfig::reboot()
 {
 #ifdef ESP8266
-   ESP.rtcUserMemoryWrite(4, (uint8_t*) iot_rtc_data, IOT_RTC_DATA_SIZE);
-#endif
+   ESP.rtcUserMemoryWrite(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
+   ESP.deepSleep(1000000ULL*2);   
+#else
    esp_deep_sleep(1000000ULL*2);   
+#endif
 }
 
 void iotConfig::saveAndReboot()
 {
    updateRTCDATA();
 #ifdef ESP8266
-   ESP.rtcUserMemoryWrite(4, (uint8_t*) iot_rtc_data, IOT_RTC_DATA_SIZE);
+   ESP.rtcUserMemoryWrite(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
+   ESP.deepSleep(1000000ULL*2);   
 #endif
    updateEEPROM();
    EEPROM.commit();
+#ifndef ESP8266
    esp_deep_sleep(1000000ULL*2);   
+#endif
 }
 
 bool iotConfig::handle()
@@ -597,18 +605,27 @@ bool iotConfig::handle()
                                   iotConfigClient.print("<form method=\"get\" onsubmit=\"javascript:document.location='/login.cgi' + $('pass') + '';\">");
                                   switch (WiFi.encryptionType(joinedNetworkIndex-1))
                                   {
+#ifdef ESP8266
+                                     case ENC_TYPE_WEP:
+                                     case ENC_TYPE_TKIP:
+                                     case ENC_TYPE_CCMP:
+                                     case ENC_TYPE_AUTO:
+#else
                                      case WIFI_AUTH_WEP:
                                      case WIFI_AUTH_WPA_PSK:
                                      case WIFI_AUTH_WPA2_PSK:
                                      case WIFI_AUTH_WPA_WPA2_PSK:
+#endif
                                           iotConfigClient.print("WiFi PSK-Key: ");
                                           iotConfigClient.print("<input type=\"password\" name=\"pass\" id=\"pass\" /><br>");
                                           break;
+#ifndef ESP8266
                                      case WIFI_AUTH_WPA2_ENTERPRISE:
                                           iotConfigClient.print("WiFi EAP Identity: ");
                                           iotConfigClient.print("<input type=\"text\" name=\"ident\" id=\"ident\" /><br>");
                                           iotConfigClient.print("WiFi EAP Password: ");
                                           iotConfigClient.print("<input type=\"password\" name=\"pass\" id=\"pass\" /><br>");
+#endif
                                           break;
                                      default:
                                           break;
@@ -793,7 +810,9 @@ bool iotConfig::handle()
                  clientConnectTime = iotConfigCurrentMillis;
                  closeConn = false;
                  iotConfigClient.stop();
+#ifndef ESP8266
                  iotConfigClient = NULL;
+#endif
               }
            }
            else
@@ -810,7 +829,13 @@ bool iotConfig::handle()
            WiFi.mode(WIFI_STA);
            WiFi.enableAP(false);
            WiFi.enableSTA(true);
+#ifdef ESP8266
+           onStaGotIPHandler      = WiFi.onStationModeGotIP(onStaGotIP);
+           onStaDisconnectHandler = WiFi.onStationModeDisconnected(onStaDisconnect);
+           onApConnectedHandler   = WiFi.onSoftAPModeStationConnected(onApConnected);
+#else
            WiFi.onEvent(iotConfigWiFiEvent);
+#endif
            Serial.println();
            Serial.println();
            Serial.print("Connecting to ");
