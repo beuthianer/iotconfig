@@ -1,9 +1,16 @@
 #ifndef IOTCONFIG_H
 #define IOTCONFIG_H IOTCONFIG_H
 
-#include <WiFi.h>
 #include <DNSServer.h>
+
+#ifdef ESP8266
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#else
+#include <WiFi.h>
 #include <ESPmDNS.h>
+#endif
+
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <EEPROM.h>

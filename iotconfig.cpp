@@ -1,6 +1,8 @@
+#ifndef ESP8266
 #include "driver/rtc_io.h"
 #include "esp_sleep.h"
 #include "esp_wpa2.h"
+#endif
 #include "iotconfig.hpp"
 
 #ifndef min
@@ -12,8 +14,14 @@ DNSServer iotConfigDnsServer;
 WiFiServer iotConfigServer(80);
 WiFiClient iotConfigClient;
 
+#ifdef ESP8266
+uint8_t rtc4[5] = "xxxx";
+uint8_t firstBoot = 1;
+uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
+#else
 RTC_DATA_ATTR uint8_t firstBoot = 1;
 RTC_DATA_ATTR uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
+#endif
 
 unsigned long iotConfigCurrentMillis=0;
 static bool iotConfigOtaPrio = false;
@@ -38,11 +46,52 @@ iotConfig::iotConfig()
    apExpireTime = 0;
    watchDogTimeout = 20000;
    otaInitialized = false;
+#ifdef ESP8266
+   ESP.rtcUserMemoryRead(0, (uint32_t*)rtc4, (size_t)4);
+   if (strncmp((const char*)rtc4, "init", 4)!=0) {
+      firstBoot = 0;
+      ESP.rtcUserMemoryRead(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
+   }
+#endif
 }
 
 iotConfig::~iotConfig()
 {
 }
+
+
+#ifdef ESP8266
+#define EVENT_STA_GOT_IP     const WiFiEventStationModeGotIP&
+#define EVENT_STA_DISCONNECT const WiFiEventStationModeDisconnected&
+#define EVENT_AP_CONNECT     const WiFiEventSoftAPModeStationConnected&
+#else
+#define EVENT_STA_GOT_IP     void
+#define EVENT_STA_DISCONNECT void
+#define EVENT_AP_CONNECT     void
+#endif
+
+void onStaGotIP(EVENT_STA_GOT_IP) {
+   Serial.println("WiFi connected");
+   Serial.println("IP address: ");
+   Serial.println(WiFi.localIP());
+   iotConfigOnline=true;
+}
+
+void onStaDisconnect(EVENT_STA_DISCONNECT) {
+   Serial.println("WiFi lost connection");
+   iotConfigOnline=false;
+   iotConfigWifiLossTS=iotConfigCurrentMillis;
+}
+
+void onApConnected(EVENT_AP_CONNECT) {
+   iotConfigResetState=true;
+}
+
+#ifdef ESP8266
+WiFiEventHandler  onStaGotIPHandler;
+WiFiEventHandler  onStaDisconnectHandler;
+WiFiEventHandler  onApConnectedHandler;
+#else
 
 static void iotConfigWiFiEvent(WiFiEvent_t event)
 {
@@ -51,35 +100,33 @@ static void iotConfigWiFiEvent(WiFiEvent_t event)
    switch(event)
    {
       case SYSTEM_EVENT_STA_GOT_IP:
-          Serial.println("WiFi connected");
-          Serial.println("IP address: ");
-          Serial.println(WiFi.localIP());
-          iotConfigOnline=true;
+          onStaGotIP();
           break;
       case SYSTEM_EVENT_STA_DISCONNECTED:
       case SYSTEM_EVENT_STA_STOP:
       case SYSTEM_EVENT_STA_LOST_IP:
       case SYSTEM_EVENT_STA_AUTHMODE_CHANGE:
-          Serial.println("WiFi lost connection");
-          iotConfigOnline=false;
-          iotConfigWifiLossTS=iotConfigCurrentMillis;
+          onStaDisconnect();
           break;
       case SYSTEM_EVENT_AP_STACONNECTED:
       case SYSTEM_EVENT_AP_STAIPASSIGNED:
-          iotConfigResetState=true;
+          onApConnected();
           break;
       default:
           break;
    }
 }
+#endif
 
 bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
                       const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime)
  
 {
+#ifndef ESP8266
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
+#endif
 
    if (rtcDataSizeN > IOT_RTC_DATA_SIZE)
    {
@@ -132,7 +179,13 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    assignVariableEEPROM((uint8_t*)&wifiClientPassword, sizeof(wifiClientPassword));
    assignVariableEEPROM((uint8_t*)&otaPassword, sizeof(otaPassword));
 
+#ifdef ESP8266
+   onStaGotIPHandler      = WiFi.onStationModeGotIP(onStaGotIP);
+   onStaDisconnectHandler = WiFi.onStationModeDisconnected(onStaDisconnect);
+   onApConnectedHandler   = WiFi.onSoftAPModeStationConnected(onApConnected);
+#else
    WiFi.onEvent(iotConfigWiFiEvent);
+#endif
    if ((strlen(otaPassword)>0) && ((!firstBoot)||(coldBootAPtime==0)))
    {
       Serial.println();
@@ -166,10 +219,13 @@ void iotConfig::reconnect() {
    if (strlen(wifiClientUsername) == 0) {
       // WPA(2)-PSK / WEP
       WiFi.mode(WIFI_STA);
+#ifndef ESP8266
       WiFi.setHostname(friendlyName);
+#endif
       WiFi.begin(wifiClientSSID, wifiClientPassword);
    } else {
       // WPA(2)-Enterprise
+#ifndef ESP8266
       WiFi.mode(WIFI_STA);
       WiFi.mode(WIFI_STA); // init wifi mode
       esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
@@ -178,6 +234,7 @@ void iotConfig::reconnect() {
       esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
       esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
       WiFi.setHostname(friendlyName);
+#endif
       WiFi.begin(wifiClientSSID); // connect to wifi
    }
 }
@@ -388,12 +445,18 @@ uint32_t iotConfig::calcCRC()
 
 void iotConfig::reboot()
 {
+#ifdef ESP8266
+   ESP.rtcUserMemoryWrite(4, (uint8_t*) iot_rtc_data, IOT_RTC_DATA_SIZE);
+#endif
    esp_deep_sleep(1000000ULL*2);   
 }
 
 void iotConfig::saveAndReboot()
 {
    updateRTCDATA();
+#ifdef ESP8266
+   ESP.rtcUserMemoryWrite(4, (uint8_t*) iot_rtc_data, IOT_RTC_DATA_SIZE);
+#endif
    updateEEPROM();
    EEPROM.commit();
    esp_deep_sleep(1000000ULL*2);   
