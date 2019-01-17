@@ -15,9 +15,12 @@ WiFiServer iotConfigServer(80);
 WiFiClient iotConfigClient;
 
 #ifdef ESP8266
-uint8_t rtc4[5] = "xxxx";
+union {
+   uint8_t buf[4];
+   uint32_t val;
+} rtc4;
 uint8_t firstBoot = 1;
-uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
+uint32_t iot_rtc_data[(IOT_RTC_DATA_SIZE+1)/4];
 #else
 RTC_DATA_ATTR uint8_t firstBoot = 1;
 RTC_DATA_ATTR uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
@@ -46,13 +49,6 @@ iotConfig::iotConfig()
    apExpireTime = 0;
    watchDogTimeout = 20000;
    otaInitialized = false;
-#ifdef ESP8266
-   ESP.rtcUserMemoryRead(0, (uint32_t*)rtc4, (size_t)4);
-   if (strncmp((const char*)rtc4, "init", 4)!=0) {
-      firstBoot = 0;
-      ESP.rtcUserMemoryRead(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
-   }
-#endif
 }
 
 iotConfig::~iotConfig()
@@ -122,7 +118,17 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
                       const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime)
  
 {
-#ifndef ESP8266
+#ifdef ESP8266
+   rtc4.val=0;
+   ESP.rtcUserMemoryRead(0, (uint32_t*)&rtc4.val, 4);
+   if (strncmp((const char*)&rtc4.val, "init", 4)==0) {
+      firstBoot = 0;
+      ESP.rtcUserMemoryRead(4, (uint32_t*)&iot_rtc_data, IOT_RTC_DATA_SIZE);
+   }
+   memcpy(&rtc4.buf, "init", 4);
+   ESP.rtcUserMemoryWrite(0, (uint32_t*)&rtc4, 4);
+   ESP.rtcUserMemoryRead(0, (uint32_t*)&rtc4.val, 4);
+#else
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
@@ -450,7 +456,7 @@ void iotConfig::reboot()
 {
 #ifdef ESP8266
    ESP.rtcUserMemoryWrite(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
-   ESP.deepSleep(1000000ULL*2);   
+   ESP.restart();
 #else
    esp_deep_sleep(1000000ULL*2);   
 #endif
@@ -461,7 +467,7 @@ void iotConfig::saveAndReboot()
    updateRTCDATA();
 #ifdef ESP8266
    ESP.rtcUserMemoryWrite(4, (uint32_t*)iot_rtc_data, IOT_RTC_DATA_SIZE);
-   ESP.deepSleep(1000000ULL*2);   
+   ESP.restart();
 #endif
    updateEEPROM();
    EEPROM.commit();
@@ -532,7 +538,13 @@ bool iotConfig::handle()
                     {
                        if (currentLine.length() == 0)
                        {
-                          String wpaTypes[] = { "OPEN", "WEP", "WPA-PSK", "WPA2-PSK", "WPA/WPA2-PSK","WPA2-Enterprise" };
+#ifdef ESP8266
+                          String wpaTypes[] = { "", "", "WPA-PSK (TKIP)", "", "WPA-PSK (CCMP)", "WEP", "", "OPEN", "WPA-PSK (auto)", "*unsupported (WPA-enterprise)*" };
+                          const int wpaTypesMax = 9;
+#else
+                          String wpaTypes[] = { "OPEN", "WEP", "WPA-PSK", "WPA2-PSK", "WPA/WPA2-PSK","WPA2-Enterprise", "*unsupported*" };
+                          const int wpaTypesMax = 6;
+#endif
                           apExpireTime=iotConfigCurrentMillis + 60000;
                           iotConfigClient.println("HTTP/1.1 200 OK");
                           iotConfigClient.println("Content-type:text/html");
@@ -588,7 +600,7 @@ bool iotConfig::handle()
                                           iotConfigClient.print(" </a></td><td>");
                                           iotConfigClient.print(WiFi.RSSI(i));
                                           iotConfigClient.print(" dB</td><td>");
-                                          iotConfigClient.println(wpaTypes[WiFi.encryptionType(i)]);
+                                          iotConfigClient.println(wpaTypes[min(wpaTypesMax,WiFi.encryptionType(i))]);
                                           iotConfigClient.println("</td>");
                                           iotConfigClient.println("</tr>");
                                       }
