@@ -26,6 +26,8 @@ RTC_DATA_ATTR uint8_t firstBoot = 1;
 RTC_DATA_ATTR uint8_t iot_rtc_data[IOT_RTC_DATA_SIZE];
 #endif
 
+static bool factoryResetted = false;
+
 unsigned long iotConfigCurrentMillis=0;
 static bool iotConfigOtaPrio = false;
 static bool iotConfigOnline = false;
@@ -163,6 +165,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    if (eepromCRC != calcCRC())
    {
       Serial.println("WARN: EEPROM CRC mismatch, erasing EEPROM");
+      factoryResetted = true;
       factoryReset();
    }
 
@@ -208,7 +211,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
       Serial.println(friendlyName);
       WiFi.mode(WIFI_AP);
       WiFi.softAPConfig(iotConfigApIP, iotConfigApIP, IPAddress(255, 255, 255, 0));
-      WiFi.softAP(friendlyName, wifiApPassword);
+      WiFi.softAP(friendlyName);
       // if DNSServer is started with "*" for domain name, it will reply with
       // provided IP to all DNS request
       iotConfigDnsServer.start(53, "*", iotConfigApIP);
@@ -309,16 +312,18 @@ bool iotConfig::assignVariableEEPROM(uint8_t *pointer, const size_t varSize)
    newInfo.allocSize=varSize;
    if (addVariableInfo(&eepromAllocData, &eepromDataIndex, &newInfo))
    {
-      Serial.print("Reading ");
-      Serial.print(varSize);
-      Serial.print(" bytes of EEPROM data at index ");
-      Serial.print(eepromAssignPointer);
-      Serial.print(" into RAM @");
-      Serial.println((int)pointer,HEX);
-      for (int i=0; i<varSize; i++)
-      {
-         pointer[i]=EEPROM.read(eepromAssignPointer+i);
-         //Serial.println(pointer[i]);
+      if (!factoryResetted) {
+         Serial.print("Reading ");
+         Serial.print(varSize);
+         Serial.print(" bytes of EEPROM data at index ");
+         Serial.print(eepromAssignPointer);
+         Serial.print(" into RAM @");
+         Serial.println((int)pointer,HEX);
+         for (int i=0; i<varSize; i++)
+         {
+            pointer[i]=EEPROM.read(eepromAssignPointer+i);
+            //Serial.println(pointer[i]);
+         }
       }
       eepromAssignPointer+=varSize;
       return true;
