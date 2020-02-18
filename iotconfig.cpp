@@ -13,6 +13,7 @@ IPAddress iotConfigApIP(192, 168, 4, 1);
 DNSServer iotConfigDnsServer;
 WiFiServer iotConfigServer(80);
 WiFiClient iotConfigClient;
+static bool iotConfigUseWiFi = true;
 
 #ifdef ESP8266
 union {
@@ -188,13 +189,16 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    assignVariableEEPROM((uint8_t*)&wifiClientPassword, sizeof(wifiClientPassword));
    assignVariableEEPROM((uint8_t*)&otaPassword, sizeof(otaPassword));
 
+   if (strlen(deviceName)==0) { iotConfigUseWiFi = false; }
+   if (iotConfigUseWiFi) {
 #ifdef ESP8266
-   onStaGotIPHandler      = WiFi.onStationModeGotIP(onStaGotIP);
-   onStaDisconnectHandler = WiFi.onStationModeDisconnected(onStaDisconnect);
-   onApConnectedHandler   = WiFi.onSoftAPModeStationConnected(onApConnected);
+      onStaGotIPHandler      = WiFi.onStationModeGotIP(onStaGotIP);
+      onStaDisconnectHandler = WiFi.onStationModeDisconnected(onStaDisconnect);
+      onApConnectedHandler   = WiFi.onSoftAPModeStationConnected(onApConnected);
 #else
-   WiFi.onEvent(iotConfigWiFiEvent);
+      WiFi.onEvent(iotConfigWiFiEvent);
 #endif
+   }
    if ((strlen(otaPassword)>0) && ((!firstBoot)||(coldBootAPtime==0)))
    {
       Serial.println();
@@ -209,13 +213,15 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    {
       Serial.print("INFO: Setting up Access Point with SSID: ");
       Serial.println(friendlyName);
-      WiFi.mode(WIFI_AP);
-      WiFi.softAPConfig(iotConfigApIP, iotConfigApIP, IPAddress(255, 255, 255, 0));
-      WiFi.softAP(friendlyName);
-      // if DNSServer is started with "*" for domain name, it will reply with
-      // provided IP to all DNS request
-      iotConfigDnsServer.start(53, "*", iotConfigApIP);
-      iotConfigServer.begin();
+      if (iotConfigUseWiFi) {
+         WiFi.mode(WIFI_AP);
+         WiFi.softAPConfig(iotConfigApIP, iotConfigApIP, IPAddress(255, 255, 255, 0));
+         WiFi.softAP(friendlyName);
+         // if DNSServer is started with "*" for domain name, it will reply with
+         // provided IP to all DNS request
+         iotConfigDnsServer.start(53, "*", iotConfigApIP);
+         iotConfigServer.begin();
+      }
       iotConfigMode=iotConfigServerMode;
       apExpireTime=millis() + coldBootAPtime;
    }
@@ -224,6 +230,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
 }
 
 void iotConfig::reconnect() {
+   if (!iotConfigUseWiFi) { return; }
    WiFi.disconnect();
    if (strlen(wifiClientUsername) == 0) {
       // WPA(2)-PSK / WEP
@@ -250,6 +257,7 @@ void iotConfig::reconnect() {
 
 void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPassword)
 {
+   if (!iotConfigUseWiFi) { return; }
    ArduinoOTA.setHostname(friendlyName);
    ArduinoOTA.setPassword(otaPassword);
    ArduinoOTA
@@ -485,6 +493,8 @@ bool iotConfig::handle()
 {
    iotConfigCurrentMillis = millis();
    static unsigned long iotConfigReconnectTS = 0;
+
+   if (!iotConfigUseWiFi) { return false; }
    
    switch(iotConfigMode)
    {
