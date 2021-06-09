@@ -247,8 +247,7 @@ void iotConfig::reconnect() {
       esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
       esp_wifi_sta_wpa2_ent_set_username((uint8_t *)wifiClientUsername, strlen(wifiClientUsername));
       esp_wifi_sta_wpa2_ent_set_password((uint8_t *)wifiClientPassword, strlen(wifiClientPassword));
-      esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT(); //set config settings to default
-      esp_wifi_sta_wpa2_ent_enable(&config); // set config settings to enable function
+      esp_wifi_sta_wpa2_ent_enable(); // set config settings to enable function
       WiFi.setHostname(friendlyName);
 #endif
       WiFi.begin(wifiClientSSID); // connect to wifi
