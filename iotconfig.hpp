@@ -36,7 +36,7 @@ class iotConfig
       iotConfig();
       ~iotConfig();
       bool begin(const char *deviceName, const char *initialPasswordN,
-                 const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime);
+                 const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime, bool enableOTA = true);
       void setWiFiClientWatchDogTimeout(const uint32_t timeoutMS);
       void recoveryChanceWait();
       bool assignVariableEEPROM(uint8_t *pointer, const size_t varSize);

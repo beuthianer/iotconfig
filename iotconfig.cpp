@@ -14,6 +14,7 @@ DNSServer iotConfigDnsServer;
 WiFiServer iotConfigServer(80);
 WiFiClient iotConfigClient;
 static bool iotConfigUseWiFi = true;
+static bool useOTA = true;
 
 #ifdef ESP8266
 union {
@@ -118,7 +119,7 @@ static void iotConfigWiFiEvent(WiFiEvent_t event)
 #endif
 
 bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
-                      const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime)
+                      const size_t eepromSizeN, const size_t rtcDataSizeN, const uint16_t coldBootAPtime, bool enableOTA)
  
 {
 #ifdef ESP8266
@@ -137,6 +138,7 @@ bool iotConfig::begin(const char *deviceName, const char *initialPasswordN,
    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
 #endif
 
+   useOTA = enableOTA;
    if (rtcDataSizeN > IOT_RTC_DATA_SIZE)
    {
       return false;
@@ -257,6 +259,7 @@ void iotConfig::reconnect() {
 void iotConfig::arduinoOTAsetup(const char *friendlyName, const char *otaPassword)
 {
    if (!iotConfigUseWiFi) { return; }
+   if (!useOTA) { return; }
    ArduinoOTA.setHostname(friendlyName);
    ArduinoOTA.setPassword(otaPassword);
    ArduinoOTA
@@ -500,13 +503,15 @@ bool iotConfig::handle()
       case iotConfigClientMode:
            if (otaInitialized)
            {        
-              do {
-                 ArduinoOTA.handle();
-              } while (iotConfigOtaPrio);
+              if (useOTA) {
+                 do {
+                    ArduinoOTA.handle();
+                 } while (iotConfigOtaPrio);
+              }
            }
            else
            {
-              if ((iotConfigOnline) && (!otaInitialized))
+              if ((iotConfigOnline) && (!otaInitialized) && (useOTA))
               {
                  arduinoOTAsetup(friendlyName, otaPassword);
                  otaInitialized = true;
@@ -815,10 +820,12 @@ bool iotConfig::handle()
                        {
                           if (strncmp(otaPassword, decodedPassString.c_str(), sizeof(otaPassword)) == 0)
                           {
-                             arduinoOTAsetup(String("recovery " + String(friendlyName)).c_str(), otaPassword);
-                             while (1)
-                             {
-                                ArduinoOTA.handle();
+                             if (useOTA) {
+                                arduinoOTAsetup(String("recovery " + String(friendlyName)).c_str(), otaPassword);
+                                while (1)
+                                {
+                                   ArduinoOTA.handle();
+                                }
                              }
                           }
                           else
